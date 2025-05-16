@@ -5,8 +5,19 @@ import requests # For OpenRouter API calls
 import json # For OpenRouter API calls
 from newsapi import NewsApiClient # Ensure NewsApiClient is imported at the top
 import pandas_ta as ta # Ensure pandas_ta is imported at the top
+import os
 
 st.set_page_config(layout="wide")
+
+def read_prompt_file():
+    """Read the prompt file and return its contents."""
+    try:
+        prompt_path = os.path.join(os.path.dirname(__file__), 'prompts', 'personal_finance_advisor_v1.md')
+        with open(prompt_path, 'r') as f:
+            return f.read()
+    except Exception as e:
+        st.error(f"Error reading prompt file: {e}")
+        return None
 
 st.title("AI Financial Advisor MVP")
 
@@ -344,11 +355,37 @@ def get_llm_rationale_for_stock(user_profile, stock_data, openrouter_key, llm_mo
     if not stock_data:
         return "No stock data provided to LLM."
 
-    prompt = f"""You are a financial assistant providing a brief investment rationale.
+    # Read the base prompt
+    base_prompt = read_prompt_file()
+    if not base_prompt:
+        return "Could not read prompt file. Cannot generate rationale."
+
+    # Prepare news section
+    news_section = ""
+    if stock_data.get('news'):
+        for news_item in stock_data['news'][:2]:
+            news_section += f"  - {news_item.get('title', 'N/A')} ({news_item.get('publishedAt', 'N/A')})\n"
+    else:
+        news_section = "  - No recent news available.\n"
+
+    # Calculate price vs SMA percentages if available
+    price_vs_sma = ""
+    if all(k in stock_data.get('technicals', {}) for k in ['SMA50', 'SMA200']):
+        sma50 = stock_data['technicals']['SMA50']
+        sma200 = stock_data['technicals']['SMA200']
+        if sma50 and sma200 and sma200 != 0:
+            price_vs_sma = f"Price vs SMA50/200: {((sma50 - sma200) / sma200 * 100):.1f}%"
+
+    # Format the prompt with actual data
+    prompt = f"""YOU ARE A PERSONAL-FINANCE ADVISOR AI WITH INSTITUTIONAL-GRADE EQUITY ANALYSIS SKILLS.
+
+TASK: Provide a crisp yet thorough investment rationale and position-size suggestion for a single stock, fully customized to the supplied user profile and investment amount.
+
 User Profile:
 - Risk Appetite: {user_profile.get('risk_appetite')}
 - Investment Horizon: {user_profile.get('investment_horizon')}
 - Finance Experience: {user_profile.get('finance_experience')}
+- Investment Amount: ₹{user_profile.get('investment_amount', 0):,}
 
 Stock for Analysis: {stock_data.get('info', stock_data.get('symbol'))} ({stock_data.get('symbol')})
 
@@ -361,14 +398,9 @@ Key Data Points:
     - MACD Line: {stock_data.get('technicals', {}).get('MACD_line', 'N/A')}
     - MACD Signal: {stock_data.get('technicals', {}).get('MACD_signal', 'N/A')}
 - Recent News Snippets (max 2):
-"""
-    if stock_data.get('news'):
-        for i, news_item in enumerate(stock_data['news'][:2]):
-            prompt += f"  - News {i+1}: {news_item.get('title', 'N/A')}\n"
-    else:
-        prompt += "  - No recent news available.\n"
+{news_section}
 
-    prompt += "\nBased on the user's profile and the provided stock data (price change, technicals, news), provide a concise 4-5 sentence investment rationale. Should the user consider this stock? Briefly explain why or why not, aligning with their risk profile."
+{base_prompt}"""
 
     try:
         response = requests.post(
@@ -381,9 +413,9 @@ Key Data Points:
                 "model": llm_model_id,
                 "messages": [{"role": "user", "content": prompt}]
             }),
-            timeout=60 # Increased timeout for LLM response
+            timeout=60
         )
-        response.raise_for_status() # Raises an exception for HTTP errors
+        response.raise_for_status()
         api_response_json = response.json()
         
         if api_response_json.get("choices") and len(api_response_json["choices"]) > 0:
