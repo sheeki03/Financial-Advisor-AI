@@ -468,9 +468,6 @@ with st.form(key='user_input_form'):
         "Qwen1.5 32B Chat": "qwen/qwen3-30b-a3b",
         "DeepSeek R1T Chimera": "tngtech/deepseek-r1t-chimera",
         # Adding back some popular free models from previous state if they were removed by user edit
-        "Mistral 7B Instruct (Free)": "mistralai/mistral-7b-instruct",
-        "Mixtral 8x7B Instruct (Free)": "mistralai/mixtral-8x7b-instruct",
-        "Llama-3 8B Instruct (Free)": "meta-llama/llama-3-8b-instruct",
     }
     selected_llm_display_name = st.selectbox(
         "Select LLM Model",
